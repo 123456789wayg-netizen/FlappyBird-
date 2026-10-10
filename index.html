@@ -1,0 +1,999 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>極限豪華雙人版 Flappy Bird - 惡搞道具逆襲</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        body {
+            margin: 0;
+            padding: 0;
+            background: #222;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+        #game-container {
+            position: relative;
+            width: 480px;
+            height: 640px;
+            background: #70c5ce;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            border-radius: 8px;
+            overflow: hidden;
+            transition: transform 0.5s ease-in-out;
+        }
+        /* 螢幕顛倒特效 */
+        .invert-screen {
+            transform: rotate(180px); /* 透過 JS 補強或單純 CSS 旋轉 */
+        }
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            background: transparent;
+        }
+        /* UI 疊加層 */
+        .ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 15px;
+            color: white;
+            font-weight: bold;
+            text-shadow: 2px 2px 0px #000, -1px -1px 0px #000, 1px -1px 0px #000, -1px 1px 0px #000;
+        }
+        .hud-top {
+            display: flex;
+            justify-content: space-between;
+            width: 100%;
+        }
+        .player-info {
+            background: rgba(0, 0, 0, 0.4);
+            padding: 8px 12px;
+            border-radius: 6px;
+            border: 2px solid rgba(255,255,255,0.2);
+            min-width: 160px;
+        }
+        .p1-info { border-color: #ffeb3b; }
+        .p2-info { border-color: #ff5722; }
+        .player-name {
+            font-size: 16px;
+            margin-bottom: 3px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .player-score {
+            font-size: 24px;
+            font-family: monospace;
+        }
+        .player-lives {
+            color: #ff2a6d;
+            font-size: 18px;
+            letter-spacing: 2px;
+        }
+        .status-effects {
+            font-size: 12px;
+            margin-top: 4px;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+        .effect-tag {
+            padding: 2px 5px;
+            border-radius: 3px;
+            animation: pulse 1s infinite alternate;
+            text-align: center;
+        }
+        @keyframes pulse {
+            from { opacity: 0.7; }
+            to { opacity: 1; }
+        }
+
+        /* 菜單與覆蓋層 */
+        .overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.75);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            pointer-events: auto;
+            color: white;
+            text-align: center;
+            padding: 20px;
+            z-index: 10;
+        }
+        h1 {
+            font-size: 32px;
+            margin-bottom: 10px;
+            color: #ffca28;
+            text-shadow: 3px 3px 0px #333;
+        }
+        .subtitle {
+            font-size: 14px;
+            color: #ddd;
+            margin-bottom: 25px;
+            line-height: 1.5;
+        }
+        .btn {
+            background: #4caf50;
+            color: white;
+            border: none;
+            padding: 12px 35px;
+            font-size: 20px;
+            font-weight: bold;
+            border-radius: 25px;
+            cursor: pointer;
+            box-shadow: 0 5px 0px #2e7d32;
+            transition: all 0.1s;
+            margin: 8px;
+            min-width: 180px;
+        }
+        .btn:active {
+            transform: translateY(4px);
+            box-shadow: 0 1px 0px #2e7d32;
+        }
+        .btn-orange {
+            background: #ff5722;
+            box-shadow: 0 5px 0px #d84315;
+        }
+        .btn-orange:active { box-shadow: 0 1px 0px #d84315; }
+        
+        .high-scores {
+            margin-top: 25px;
+            background: rgba(255,255,255,0.1);
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-size: 14px;
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+        .high-scores div { margin: 5px 0; }
+
+        .hidden { display: none !important; }
+
+        /* 道具說明圖鑑 */
+        .item-legend {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 20px;
+            font-size: 12px;
+            text-align: left;
+            background: rgba(0,0,0,0.3);
+            padding: 10px;
+            border-radius: 6px;
+            max-width: 360px;
+        }
+        .legend-item { display: flex; align-items: center; gap: 8px; }
+        .dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+        <!-- 畫布 -->
+        <canvas id="gameCanvas" width="480" height="640"></canvas>
+
+        <!-- 抬頭顯示 UI -->
+        <div class="ui-layer">
+            <div class="hud-top">
+                <!-- 玩家 1 -->
+                <div class="player-info p1-info" id="p1-hud">
+                    <div class="player-name">💛 玩家 1 (單人/滑鼠/空白)</div>
+                    <div class="player-lives" id="p1-lives">❤️❤️❤️</div>
+                    <div class="player-score" id="p1-score">得分: 0</div>
+                    <div class="status-effects" id="p1-effects"></div>
+                </div>
+                <!-- 玩家 2 -->
+                <div class="player-info p2-info hidden" id="p2-hud">
+                    <div class="player-name">🧡 玩家 2 (鍵盤 ↑ 鍵)</div>
+                    <div class="player-lives" id="p2-lives">❤️❤️❤️</div>
+                    <div class="player-score" id="p2-score">得分: 0</div>
+                    <div class="status-effects" id="p2-effects"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 主選單畫面 -->
+        <div id="start-menu" class="overlay">
+            <h1>Flappy Birds<br><span style="font-size:24px; color:#ff5722;">惡搞道具大逆襲</span></h1>
+            <p class="subtitle">全新加入混亂負面道具！不僅考驗技術，更挑戰你的抗噪與適應力！</p>
+            
+            <div class="item-legend">
+                <div class="legend-item"><span class="dot" style="background:#00ffcc; box-shadow: 0 0 8px #00ffcc;"></span>🟢 星星：回復 1 點生命</div>
+                <div class="legend-item"><span class="dot" style="background:#0066ff; box-shadow: 0 0 8px #0066ff;"></span>🔵 閃電：無敵瘋狂衝刺</div>
+                <div class="legend-item"><span class="dot" style="background:#ff00ff; box-shadow: 0 0 8px #ff00ff;"></span>🟣 毒菇：螢幕瞬間顛倒翻轉</div>
+                <div class="legend-item"><span class="dot" style="background:#ffcc00; box-shadow: 0 0 8px #ffcc00;"></span>🟡 磁鐵：水管開始上下活塞運動</div>
+            </div>
+
+            <button class="btn" id="btn-solo">單人挑戰</button>
+            <button class="btn btn-orange" id="btn-coop">雙人混戰</button>
+            
+            <div class="high-scores">
+                <div id="high-solo">單人歷史最高: 0</div>
+                <div id="high-coop">雙人歷史最高: 0</div>
+            </div>
+        </div>
+
+        <!-- 結束畫面 -->
+        <div id="game-over-menu" class="overlay hidden">
+            <h1 id="game-over-title">遊戲結束</h1>
+            <p id="game-over-result" style="font-size: 18px; color: #fff; margin-bottom: 20px;"></p>
+            
+            <button class="btn" id="btn-restart">再玩一次</button>
+            <button class="btn btn-orange" id="btn-main-menu">回主選單</button>
+        </div>
+    </div>
+
+<script>
+/**
+ * 網頁原生 Web Audio API 音效合成器
+ */
+const AudioContext = window.AudioContext || window.webkitAudioContext;
+let audioCtx = null;
+
+function initAudio() {
+    if (!audioCtx) audioCtx = new AudioContext();
+}
+
+function playSound(type) {
+    if (!audioCtx) return;
+    try {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        
+        const now = audioCtx.currentTime;
+
+        if (type === 'jump') {
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(400, now);
+            osc.frequency.exponentialRampToValueAtTime(800, now + 0.12);
+            gain.gain.setValueAtTime(0.3, now);
+            gain.gain.linearRampToValueAtTime(0.01, now + 0.12);
+            osc.start(now);
+            osc.stop(now + 0.12);
+        } else if (type === 'score') {
+            osc.type = 'square';
+            osc.frequency.setValueAtTime(587.33, now); // D5
+            osc.frequency.setValueAtTime(880, now + 0.08); // A5
+            gain.gain.setValueAtTime(0.2, now);
+            gain.gain.linearRampToValueAtTime(0.01, now + 0.25);
+            osc.start(now);
+            osc.stop(now + 0.25);
+        } else if (type === 'hit') {
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(180, now);
+            osc.frequency.linearRampToValueAtTime(60, now + 0.25);
+            gain.gain.setValueAtTime(0.4, now);
+            gain.gain.linearRampToValueAtTime(0.01, now + 0.25);
+            osc.start(now);
+            osc.stop(now + 0.25);
+        } else if (type === 'heal') {
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(523.25, now); // C5
+            osc.frequency.exponentialRampToValueAtTime(1046.5, now + 0.2); // C6
+            gain.gain.setValueAtTime(0.3, now);
+            gain.gain.linearRampToValueAtTime(0.01, now + 0.2);
+            osc.start(now);
+            osc.stop(now + 0.2);
+        } else if (type === 'buff') {
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(300, now);
+            osc.frequency.linearRampToValueAtTime(1200, now + 0.4);
+            gain.gain.setValueAtTime(0.2, now);
+            gain.gain.linearRampToValueAtTime(0.01, now + 0.4);
+            osc.start(now);
+            osc.stop(now + 0.4);
+        } else if (type === 'debuff') {
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(600, now);
+            osc.frequency.linearRampToValueAtTime(150, now + 0.5);
+            gain.gain.setValueAtTime(0.3, now);
+            gain.gain.linearRampToValueAtTime(0.01, now + 0.5);
+            osc.start(now);
+            osc.stop(now + 0.5);
+        }
+    } catch(e) { console.log("音效撥放失敗:", e); }
+}
+
+/**
+ * 遊戲主程式
+ */
+const container = document.getElementById('game-container');
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+// 遊戲配置與常數
+const GAME_SPEED_BASE = 2.8;
+const GRAVITY_BASE = 0.4;
+const JUMP_IMPULSE = -6.8;
+const PIPE_SPAWN_INTERVAL = 110; // 幀數
+const PIPE_GAP_BASE = 155;
+
+// 遊戲狀態變數
+let gameMode = 'solo'; // 'solo' 或 'coop'
+let isPlaying = false;
+let globalFrame = 0;
+let pipes = [];
+let items = [];
+let particles = [];
+let backgroundX = 0;
+let groundX = 0;
+
+// 全局環境混亂狀態 (由負面道具觸發)
+let globalEffects = {
+    screenInverted: false,
+    screenInvertedTimer: 0,
+    pipesMoving: false,
+    pipesMovingTimer: 0
+};
+
+// 歷史紀錄
+let highScores = {
+    solo: parseInt(localStorage.getItem('fb_high_solo')) || 0,
+    coop: parseInt(localStorage.getItem('fb_high_coop')) || 0
+};
+
+// 更新最高分數顯示
+function updateHighScoreUI() {
+    document.getElementById('high-solo').innerText = `單人歷史最高: ${highScores.solo}`;
+    document.getElementById('high-coop').innerText = `雙人歷史最高: ${highScores.coop}`;
+}
+updateHighScoreUI();
+
+// 玩家類別
+class Player {
+    constructor(id, color, name) {
+        this.id = id;
+        this.color = color;
+        this.name = name;
+        this.reset();
+    }
+
+    reset() {
+        this.x = gameMode === 'solo' ? 120 : (this.id === 1 ? 90 : 150);
+        this.y = 250;
+        this.radius = 16;
+        this.velocity = 0;
+        this.score = 0;
+        this.lives = 3;
+        this.alive = true;
+        
+        // 增益與減益狀態計時器(單位: 幀)
+        this.invincibleTimer = 0; // 受傷無敵
+        this.dashTimer = 0;       // 藍色衝刺
+        this.angle = 0;
+    }
+
+    jump() {
+        if (!this.alive) return;
+        this.velocity = JUMP_IMPULSE;
+        playSound('jump');
+    }
+
+    damage() {
+        if (this.invincibleTimer > 0 || this.dashTimer > 0) return; // 無敵中不扣血
+        
+        this.lives--;
+        playSound('hit');
+        createExplosion(this.x, this.y, this.color, 20);
+        
+        if (this.lives <= 0) {
+            this.alive = false;
+            this.lives = 0;
+        } else {
+            this.invincibleTimer = 90; // 1.5 秒無敵 (60fps下)
+        }
+    }
+
+    update() {
+        if (!this.alive) return;
+
+        // 計算倒數計時器
+        if (this.invincibleTimer > 0) this.invincibleTimer--;
+        if (this.dashTimer > 0) this.dashTimer--;
+
+        // 物理運動
+        this.velocity += GRAVITY_BASE;
+        this.y += this.velocity;
+
+        // 計算旋轉角度
+        if (this.dashTimer > 0) {
+            this.angle = (globalFrame * 0.2) % (Math.PI * 2); // 衝刺時酷炫自轉
+        } else {
+            this.angle = Math.min(Math.PI / 3, Math.max(-Math.PI / 7, this.velocity * 0.07));
+        }
+
+        // 碰撞天花板限制
+        if (this.y - this.radius < 0) {
+            this.y = this.radius;
+            this.velocity = 0;
+        }
+
+        // 碰撞地面判定
+        if (this.y + this.radius >= 540) {
+            this.y = 540 - this.radius;
+            this.lives = 0;
+            this.alive = false;
+            playSound('hit');
+            createExplosion(this.x, this.y, this.color, 30);
+        }
+    }
+
+    draw() {
+        if (!this.alive) return;
+
+        // 受傷閃爍效果
+        if (this.invincibleTimer > 0 && Math.floor(globalFrame / 4) % 2 === 0) {
+            return;
+        }
+
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        ctx.rotate(this.angle);
+
+        // 繪製衝刺特效防護罩
+        if (this.dashTimer > 0) {
+            ctx.beginPath();
+            ctx.arc(0, 0, this.radius + 10, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(0, 150, 255, ${0.3 + Math.sin(globalFrame * 0.2) * 0.15})`;
+            ctx.strokeStyle = '#00cdff';
+            ctx.lineWidth = 2;
+            ctx.fill();
+            ctx.stroke();
+        }
+
+        // 繪製小鳥身體 (像素風小圓形)
+        ctx.beginPath();
+        ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+        ctx.fillStyle = this.color;
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 2;
+        ctx.fill();
+        ctx.stroke();
+
+        // 眼睛
+        ctx.beginPath();
+        ctx.arc(6, -5, 4, 0, Math.PI * 2);
+        ctx.fillStyle = '#fff';
+        ctx.fill();
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(7, -5, 1.5, 0, Math.PI * 2);
+        ctx.fillStyle = '#000';
+        ctx.fill();
+
+        // 鳥嘴
+        ctx.beginPath();
+        ctx.moveTo(12, -1);
+        ctx.lineTo(22, 3);
+        ctx.lineTo(11, 7);
+        ctx.closePath();
+        ctx.fillStyle = '#ff9800';
+        ctx.fill();
+        ctx.stroke();
+
+        // 翅膀
+        ctx.beginPath();
+        ctx.arc(-6, 2, 6, 0, Math.PI * 2);
+        ctx.fillStyle = '#fff';
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.restore();
+    }
+}
+
+// 實例化兩位玩家
+const player1 = new Player(1, '#ffeb3b', '玩家 1');
+const player2 = new Player(2, '#ff5722', '玩家 2');
+
+// 水管結構
+class Pipe {
+    constructor(x) {
+        this.x = x;
+        this.width = 75;
+        this.gap = PIPE_GAP_BASE;
+        // 確保水管開口不會太靠邊緣
+        this.topHeight = Math.floor(Math.random() * (320 - 80)) + 80;
+        this.bottomY = this.topHeight + this.gap;
+        this.passed = false;
+        
+        // 活塞運動參數
+        this.baseTopHeight = this.topHeight;
+        this.moveSeed = Math.random() * 100; // 隨機初相
+    }
+
+    update(speed) {
+        this.x -= speed;
+
+        // 如果啟用了上下移動惡搞效果
+        if (globalEffects.pipesMoving) {
+            let offset = Math.sin((globalFrame * 0.05) + this.moveSeed) * 1.5; // 上下平移
+            this.topHeight = this.baseTopHeight + offset * 25;
+            this.bottomY = this.topHeight + this.gap;
+        }
+    }
+
+    draw() {
+        ctx.fillStyle = '#73bf2e';
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 3;
+
+        // 上水管
+        ctx.fillRect(this.x, 0, this.width, this.topHeight);
+        ctx.strokeRect(this.x, -5, this.width, this.topHeight + 5);
+        // 上水管沿口
+        ctx.fillRect(this.x - 4, this.topHeight - 24, this.width + 8, 24);
+        ctx.strokeRect(this.x - 4, this.topHeight - 24, this.width + 8, 24);
+
+        // 下水管
+        ctx.fillRect(this.x, this.bottomY, this.width, 540 - this.bottomY);
+        ctx.strokeRect(this.x, this.bottomY, this.width, 540 - this.bottomY + 5);
+        // 下水管沿口
+        ctx.fillRect(this.x - 4, this.bottomY, this.width + 8, 24);
+        ctx.strokeRect(this.x - 4, this.bottomY, this.width + 8, 24);
+    }
+}
+
+// 隨機道具結構
+class Item {
+    constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.radius = 11;
+        this.collected = false;
+
+        // 隨機分配道具類型 (共四種：2正向、2負向)
+        // 0: 綠星(補血), 1: 藍閃電(無敵衝刺), 2: 紫菇(顛倒), 3: 黃磁鐵(水管活塞運動)
+        const rand = Math.random();
+        if (rand < 0.30) {
+            this.type = 0; // 補血
+            this.color = '#00ffcc';
+            this.label = '⭐';
+        } else if (rand < 0.55) {
+            this.type = 1; // 衝刺
+            this.color = '#0066ff';
+            this.label = '⚡';
+        } else if (rand < 0.80) {
+            this.type = 2; // 顛倒惡搞
+            this.color = '#ff00ff';
+            this.label = '🍄';
+        } else {
+            this.type = 3; // 活塞惡搞
+            this.color = '#ffcc00';
+            this.label = '🧲';
+        }
+    }
+
+    update(speed) {
+        this.x -= speed;
+        // 上下微幅漂浮感
+        this.y += Math.sin(globalFrame * 0.1 + this.x * 0.02) * 0.4;
+    }
+
+    draw() {
+        ctx.save();
+        // 光暈特效
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = this.color;
+        
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.fillStyle = this.color;
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 1.5;
+        ctx.fill();
+        ctx.stroke();
+        
+        // 渲染中央小符號
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = '#000';
+        ctx.font = '12px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(this.label, this.x, this.y + 0.5);
+        ctx.restore();
+    }
+}
+
+// 粒子特效
+class Particle {
+    constructor(x, y, color) {
+        this.x = x;
+        this.y = y;
+        this.vx = (Math.random() - 0.5) * 6;
+        this.vy = (Math.random() - 0.5) * 6;
+        this.radius = Math.random() * 4 + 2;
+        this.color = color;
+        this.alpha = 1;
+        this.decay = Math.random() * 0.03 + 0.01;
+    }
+    update() {
+        this.x += this.vx;
+        this.y += this.vy;
+        this.alpha -= this.decay;
+    }
+    draw() {
+        ctx.save();
+        ctx.globalAlpha = this.alpha;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.fillStyle = this.color;
+        ctx.fill();
+        ctx.restore();
+    }
+}
+
+function createExplosion(x, y, color, count) {
+    for (let i = 0; i < count; i++) {
+        particles.push(new Particle(x, y, color));
+    }
+}
+
+// 處理道具觸發逻辑
+function triggerItemEffect(player, type) {
+    if (type === 0) {
+        // 補血
+        if (player.lives < 3) player.lives++;
+        playSound('heal');
+        createExplosion(player.x, player.y, '#00ffcc', 15);
+    } 
+    else if (type === 1) {
+        // 無敵衝刺
+        player.dashTimer = 150; // 2.5 秒
+        playSound('buff');
+        createExplosion(player.x, player.y, '#0066ff', 20);
+    } 
+    else if (type === 2) {
+        // 負面效果：螢幕翻轉
+        globalEffects.screenInverted = true;
+        globalEffects.screenInvertedTimer = 240; // 4秒
+        playSound('debuff');
+        createExplosion(player.x, player.y, '#ff00ff', 25);
+    } 
+    else if (type === 3) {
+        // 負面效果：水管上下活塞運動
+        globalEffects.pipesMoving = true;
+        globalEffects.pipesMovingTimer = 300; // 5秒
+        playSound('debuff');
+        createExplosion(player.x, player.y, '#ffcc00', 25);
+    }
+}
+
+// 碰撞偵測輔助
+function checkCircleRectCollision(cx, cy, radius, rx, ry, rw, rh) {
+    let closestX = Math.max(rx, Math.min(cx, rx + rw));
+    let closestY = Math.max(ry, Math.min(cy, ry + rh));
+    let distanceX = cx - closestX;
+    let distanceY = cy - closestY;
+    let distanceSquared = (distanceX * distanceX) + (distanceY * distanceY);
+    return distanceSquared < (radius * radius);
+}
+
+// 遊戲核心循環
+function gameLoop() {
+    if (!isPlaying) return;
+
+    globalFrame++;
+
+    // 1. 環境惡搞定時器控管
+    if (globalEffects.screenInvertedTimer > 0) {
+        globalEffects.screenInvertedTimer--;
+        if (globalEffects.screenInvertedTimer === 0) globalEffects.screenInverted = false;
+    }
+    if (globalEffects.pipesMovingTimer > 0) {
+        globalEffects.pipesMovingTimer--;
+        if (globalEffects.pipesMovingTimer === 0) globalEffects.pipesMoving = false;
+    }
+
+    // 依據是否有玩家在衝刺，決定場景移動速度
+    let isAnyoneDashing = (player1.alive && player1.dashTimer > 0) || (gameMode === 'coop' && player2.alive && player2.dashTimer > 0);
+    let currentSpeed = isAnyoneDashing ? GAME_SPEED_BASE * 2.2 : GAME_SPEED_BASE;
+
+    // 清除畫布
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // 處理螢幕顛倒渲染翻轉效果 (CSS 翻轉更自然，這裡用 Canvas context 翻轉製造硬核混亂感)
+    ctx.save();
+    if (globalEffects.screenInverted) {
+        ctx.translate(canvas.width / 2, canvas.height / 2);
+        ctx.rotate(Math.PI);
+        ctx.translate(-canvas.width / 2, -canvas.height / 2);
+    }
+
+    // 滾動背景
+    backgroundX = (backgroundX - currentSpeed * 0.2) % canvas.width;
+    ctx.fillStyle = '#70c5ce';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    // 簡單畫點雲朵/遠景裝飾
+    ctx.fillStyle = 'rgba(255,255,255,0.4)';
+    ctx.fillRect(backgroundX + 50, 100, 80, 40);
+    ctx.fillRect(backgroundX + canvas.width + 50, 100, 80, 40);
+    ctx.fillRect(backgroundX + 260, 180, 120, 50);
+    ctx.fillRect(backgroundX + canvas.width + 260, 180, 120, 50);
+
+    // 生成水管與道具
+    if (globalFrame % PIPE_SPAWN_INTERVAL === 0) {
+        let pipeX = canvas.width + 20;
+        let newPipe = new Pipe(pipeX);
+        pipes.push(newPipe);
+
+        // 45% 機率在水管空隙中生成道具
+        if (Math.random() < 0.45) {
+            let itemY = newPipe.topHeight + (newPipe.gap / 2) + (Math.random() * 40 - 20);
+            items.push(new Item(pipeX + 25, itemY));
+        }
+    }
+
+    // 更新與繪製水管
+    for (let i = pipes.length - 1; i >= 0; i--) {
+        let p = pipes[i];
+        p.update(currentSpeed);
+        p.draw();
+
+        // 分數判定
+        let players = gameMode === 'solo' ? [player1] : [player1, player2];
+        if (!p.passed && p.x + p.width / 2 < player1.x) {
+            p.passed = true;
+            players.forEach(pl => {
+                if (pl.alive) {
+                    pl.score++;
+                    playSound('score');
+                }
+            });
+        }
+
+        // 玩家與水管碰撞偵測
+        players.forEach(pl => {
+            if (!pl.alive) return;
+            
+            // 衝刺無敵狀態下直接撞碎碎水管
+            if (pl.dashTimer > 0) {
+                if (checkCircleRectCollision(pl.x, pl.y, pl.radius, p.x, 0, p.width, p.topHeight) ||
+                    checkCircleRectCollision(pl.x, pl.y, pl.radius, p.x, p.bottomY, p.width, 540 - p.bottomY)) {
+                    createExplosion(p.x + p.width/2, pl.y, '#73bf2e', 8);
+                }
+                return;
+            }
+
+            // 一般碰撞判定
+            if (checkCircleRectCollision(pl.x, pl.y, pl.radius, p.x, 0, p.width, p.topHeight) ||
+                checkCircleRectCollision(pl.x, pl.y, pl.radius, p.x, p.bottomY, p.width, 540 - p.bottomY)) {
+                pl.damage();
+            }
+        });
+
+        // 移除出界水管
+        if (p.x + p.width < 0) pipes.splice(i, 1);
+    }
+
+    // 更新與繪製道具
+    for (let i = items.length - 1; i >= 0; i--) {
+        let item = items[i];
+        item.update(currentSpeed);
+        item.draw();
+
+        // 檢查道具碰撞
+        let players = gameMode === 'solo' ? [player1] : [player1, player2];
+        for (let pl of players) {
+            if (!pl.alive) continue;
+            let dist = Math.hypot(pl.x - item.x, pl.y - item.y);
+            if (dist < pl.radius + item.radius) {
+                triggerItemEffect(pl, item.type);
+                items.splice(i, 1);
+                break;
+            }
+        }
+
+        // 移除出界道具
+        if (item && item.x + item.radius < 0) items.splice(i, 1);
+    }
+
+    // 更新與繪製玩家
+    player1.update();
+    player1.draw();
+    if (gameMode === 'coop') {
+        player2.update();
+        player2.draw();
+    }
+
+    // 處理粒子
+    for (let i = particles.length - 1; i >= 0; i--) {
+        particles[i].update();
+        particles[i].draw();
+        if (particles[i].alpha <= 0) particles.splice(i, 1);
+    }
+
+    // 復原翻轉 Context
+    ctx.restore();
+
+    // 繪製地面 (地面不隨螢幕顛倒而翻轉，永遠在最下方作為安全邊界錨點)
+    groundX = (groundX - currentSpeed) % canvas.width;
+    ctx.fillStyle = '#ded895';
+    ctx.fillRect(0, 540, canvas.width, 100);
+    ctx.fillStyle = '#54802c';
+    ctx.fillRect(0, 540, canvas.width, 14);
+    // 地面綠色斜條紋
+    ctx.fillStyle = '#6ab030';
+    for (let i = 0; i < canvas.width + 40; i += 20) {
+        ctx.beginPath();
+        ctx.moveTo(groundX + i, 540);
+        ctx.lineTo(groundX + i + 10, 540);
+        ctx.lineTo(groundX + i, 554);
+        ctx.lineTo(groundX + i - 10, 554);
+        ctx.fill();
+    }
+
+    // 更新 HUD 文字與心心
+    document.getElementById('p1-score').innerText = `得分: ${player1.score}`;
+    document.getElementById('p1-lives').innerText = '❤️'.repeat(player1.lives) || '☠️ 已陣亡';
+    
+    // 更新 P1 的狀態標籤
+    let p1EffectsHtml = '';
+    if (player1.dashTimer > 0) p1EffectsHtml += `<span class="effect-tag" style="background:#0066ff;">⚡ 衝刺無敵 ${Math.ceil(player1.dashTimer/60)}s</span>`;
+    if (globalEffects.screenInverted) p1EffectsHtml += `<span class="effect-tag" style="background:#ff00ff;">🍄 螢幕反轉 ${Math.ceil(globalEffects.screenInvertedTimer/60)}s</span>`;
+    if (globalEffects.pipesMoving) p1EffectsHtml += `<span class="effect-tag" style="background:#ffcc00;">🧲 地震活塞 ${Math.ceil(globalEffects.pipesMovingTimer/60)}s</span>`;
+    document.getElementById('p1-effects').innerHTML = p1EffectsHtml;
+
+    if (gameMode === 'coop') {
+        document.getElementById('p2-score').innerText = `得分: ${player2.score}`;
+        document.getElementById('p2-lives').innerText = '❤️'.repeat(player2.lives) || '☠️ 已陣亡';
+        
+        let p2EffectsHtml = '';
+        if (player2.dashTimer > 0) p2EffectsHtml += `<span class="effect-tag" style="background:#0066ff;">⚡ 衝刺無敵 ${Math.ceil(player2.dashTimer/60)}s</span>`;
+        if (globalEffects.screenInverted) p2EffectsHtml += `<span class="effect-tag" style="background:#ff00ff;">🍄 螢幕反轉 ${Math.ceil(globalEffects.screenInvertedTimer/60)}s</span>`;
+        if (globalEffects.pipesMoving) p2EffectsHtml += `<span class="effect-tag" style="background:#ffcc00; color:#000;">🧲 地震活塞 ${Math.ceil(globalEffects.pipesMovingTimer/60)}s</span>`;
+        document.getElementById('p2-effects').innerHTML = p2EffectsHtml;
+    }
+
+    // 檢查結束遊戲條件
+    let shouldEnd = false;
+    if (gameMode === 'solo' && !player1.alive) {
+        shouldEnd = true;
+    } else if (gameMode === 'coop' && !player1.alive && !player2.alive) {
+        shouldEnd = true;
+    }
+
+    if (shouldEnd) {
+        endGame();
+    } else {
+        requestAnimationFrame(gameLoop);
+    }
+}
+
+// 開始遊戲
+function startGame(mode) {
+    initAudio();
+    gameMode = mode;
+    isPlaying = true;
+    globalFrame = 0;
+    pipes = [];
+    items = [];
+    particles = [];
+    
+    // 控管惡搞重設
+    globalEffects.screenInverted = false;
+    globalEffects.screenInvertedTimer = 0;
+    globalEffects.pipesMoving = false;
+    globalEffects.pipesMovingTimer = 0;
+
+    player1.reset();
+    if (gameMode === 'coop') {
+        player2.reset();
+        document.getElementById('p2-hud').classList.remove('hidden');
+    } else {
+        document.getElementById('p2-hud').classList.add('hidden');
+    }
+
+    document.getElementById('start-menu').classList.add('hidden');
+    document.getElementById('game-over-menu').classList.add('hidden');
+
+    requestAnimationFrame(gameLoop);
+}
+
+// 結束遊戲
+function endGame() {
+    isPlaying = false;
+    
+    let title = "遊戲結束 ☠️";
+    let resultText = "";
+
+    if (gameMode === 'solo') {
+        resultText = `你的最終得分是: ${player1.score}`;
+        if (player1.score > highScores.solo) {
+            highScores.solo = player1.score;
+            localStorage.setItem('fb_high_solo', highScores.solo);
+            resultText += "<br><span style='color:#ffeb3b;'>🎉 恭喜刷新個人單人紀錄！</span>";
+        }
+    } else {
+        // 雙人結算
+        if (player1.score > player2.score) {
+            resultText = `🏆 玩家 1 勝出！ (${player1.score} vs ${player2.score})`;
+        } else if (player2.score > player1.score) {
+            resultText = `🏆 玩家 2 勝出！ (${player2.score} vs ${player1.score})`;
+        } else {
+            resultText = `🤝 雙方平手！平分秋色 (${player1.score} 分)`;
+        }
+
+        let maxScore = Math.max(player1.score, player2.score);
+        if (maxScore > highScores.coop) {
+            highScores.coop = maxScore;
+            localStorage.setItem('fb_high_coop', highScores.coop);
+            resultText += "<br><span style='color:#ffeb3b;'>🎉 雙人組合攜手打破最高紀錄！</span>";
+        }
+    }
+
+    updateHighScoreUI();
+    document.getElementById('game-over-title').innerHTML = title;
+    document.getElementById('game-over-result').innerHTML = resultText;
+    document.getElementById('game-over-menu').classList.remove('hidden');
+}
+
+// 監聽控制鍵
+window.addEventListener('keydown', (e) => {
+    if (e.code === 'Space') {
+        e.preventDefault();
+        if (isPlaying) {
+            player1.jump();
+        } else if (!document.getElementById('start-menu').classList.contains('hidden')) {
+            startGame('solo');
+        } else if (!document.getElementById('game-over-menu').classList.contains('hidden')) {
+            startGame(gameMode);
+        }
+    }
+    if (e.code === 'ArrowUp') {
+        e.preventDefault();
+        if (isPlaying && gameMode === 'coop') {
+            player2.jump();
+        }
+    }
+});
+
+// 手機與點擊事件 (歸屬於P1)
+canvas.addEventListener('mousedown', (e) => {
+    if (isPlaying) {
+        player1.jump();
+    }
+});
+canvas.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    if (isPlaying) {
+        player1.jump();
+    }
+}, { passive: false });
+
+// 按鈕綁定
+document.getElementById('btn-solo').addEventListener('click', () => startGame('solo'));
+document.getElementById('btn-coop').addEventListener('click', () => startGame('coop'));
+document.getElementById('btn-restart').addEventListener('click', () => startGame(gameMode));
+document.getElementById('btn-main-menu').addEventListener('click', () => {
+    document.getElementById('game-over-menu').classList.add('hidden');
+    document.getElementById('start-menu').classList.remove('hidden');
+});
+</script>
+
+</body>
+</html>
